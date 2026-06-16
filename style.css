@@ -966,6 +966,23 @@ h4 { font-size: 0.9375rem; }
 .stagger-4 { transition-delay: 0.4s; }
 .stagger-5 { transition-delay: 0.5s; }
 
+/* In-development and personal project card treatment */
+.project-card.in-dev {
+  border-style: dashed;
+}
+
+.project-badge.amber {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.project-badge.personal {
+  color: #a78bfa;
+  background: rgba(167, 139, 250, 0.1);
+  border-color: rgba(167, 139, 250, 0.3);
+}
+
 /* ===== Canvas nodes (hero) ===== */
 #hero-canvas {
   position: absolute;
