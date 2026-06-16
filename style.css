@@ -79,22 +79,39 @@ h4 { font-size: 0.9375rem; }
 }
 
 .section-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
   font-family: var(--font-mono);
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.15em;
   color: var(--accent);
-  margin-bottom: 0.75rem;
+  margin-bottom: 1rem;
+  font-weight: 700;
+}
+
+.section-label::before {
+  content: '';
+  display: inline-block;
+  width: 20px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 2px;
+  flex-shrink: 0;
 }
 
 .section-title {
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
+  color: var(--text-primary);
 }
 
 .section-desc {
   color: var(--text-secondary);
   max-width: 560px;
   margin-bottom: 3rem;
+  font-size: 1rem;
+  line-height: 1.7;
 }
 
 /* ===== Navigation ===== */
@@ -296,19 +313,44 @@ h4 { font-size: 0.9375rem; }
   font-size: clamp(2.5rem, 6vw, 4rem);
   font-weight: 700;
   letter-spacing: -0.03em;
-  margin-bottom: 0.5rem;
+  margin-bottom: 1.25rem;
   background: linear-gradient(135deg, var(--text-primary) 60%, var(--accent));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-.hero-title {
-  font-size: clamp(1rem, 2vw, 1.125rem);
-  font-weight: 400;
+/* Hero chips replace the old hero-title paragraph */
+.hero-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+  margin-bottom: 2rem;
+}
+
+.hero-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.8125rem;
+  font-weight: 500;
   color: var(--text-secondary);
-  margin-bottom: 1.5rem;
-  font-family: var(--font-mono);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  padding: 0.35rem 0.875rem;
+  white-space: nowrap;
+  transition: border-color var(--transition), color var(--transition);
+}
+
+.hero-chip:hover {
+  border-color: var(--border-accent);
+  color: var(--text-primary);
+}
+
+.hero-chip.accent {
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-color: var(--border-accent);
 }
 
 .hero-summary {
@@ -473,22 +515,29 @@ h4 { font-size: 0.9375rem; }
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 1.25rem;
+  padding: 1.5rem;
+  transition: border-color var(--transition);
+}
+
+.info-card:hover {
+  border-color: var(--border-accent);
 }
 
 .info-card-label {
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  font-size: 0.625rem;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--text-muted);
-  margin-bottom: 0.5rem;
+  letter-spacing: 0.15em;
+  color: var(--accent);
+  margin-bottom: 0.625rem;
+  font-weight: 700;
 }
 
 .info-card-value {
   font-size: 0.9375rem;
   color: var(--text-primary);
   font-weight: 500;
+  line-height: 1.6;
 }
 
 .info-card-value a {

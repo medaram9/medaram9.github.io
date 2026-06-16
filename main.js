@@ -104,9 +104,19 @@ const io = new IntersectionObserver(entries => {
       io.unobserve(e.target);
     }
   });
-}, { threshold: 0.1 });
+}, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
 
 document.querySelectorAll('.fade-up').forEach(el => io.observe(el));
+
+// Ensure elements already in viewport on load are visible
+requestAnimationFrame(() => {
+  document.querySelectorAll('.fade-up').forEach(el => {
+    const rect = el.getBoundingClientRect();
+    if (rect.top < window.innerHeight && rect.bottom > 0) {
+      el.classList.add('visible');
+    }
+  });
+});
 
 /* ===== Animated Counters ===== */
 function animateCounter(el) {
