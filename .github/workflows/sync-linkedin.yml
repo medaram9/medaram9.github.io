@@ -27,7 +27,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install Google Generative AI SDK
-        run: pip install google-generativeai --quiet
+        run: pip install google-genai --quiet
 
       - name: Generate portfolio changes via Gemini
         env:
