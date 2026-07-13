@@ -1,25 +1,18 @@
 #!/usr/bin/env python3
-"""
-LinkedIn → Portfolio sync script (powered by Google Gemini — free tier).
-
-Reads linkedin-profile.md (source of truth) and index.html,
-asks Gemini to produce a JSON diff, applies it, and writes
-a PR description to /tmp/pr_description.md.
-"""
 import os
 import json
 import sys
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 
 def strip_code_fences(text: str) -> str:
     text = text.strip()
     if text.startswith("```"):
-        lines = text.split("\n")
-        lines = lines[1:]
+        lines = text.split("\n")[1:]
         if lines and lines[-1].strip() == "```":
             lines = lines[:-1]
-        text = "\n".join(lines).strip()
+        return "\n".join(lines).strip()
     return text
 
 
@@ -35,25 +28,14 @@ def main() -> None:
 
     with open("linkedin-profile.md", "r", encoding="utf-8") as f:
         linkedin_content = f.read()
-
     with open("index.html", "r", encoding="utf-8") as f:
         current_html = f.read()
 
     print("linkedin-profile.md loaded.")
     print("index.html loaded.")
-    print("\nCalling Gemini API…")
+    print("\nCalling Gemini API...")
 
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
-        system_instruction=(
-            "You are a portfolio website sync assistant. "
-            "Your job is to make index.html consistent with the LinkedIn profile "
-            "source-of-truth document. Return ONLY a JSON array of surgical "
-            "find-and-replace changes. No markdown fences, no explanation — "
-            "just the raw JSON array."
-        ),
-    )
+    client = genai.Client(api_key=api_key)
 
     prompt = (
         "## LinkedIn profile (source of truth)\n\n"
@@ -61,20 +43,27 @@ def main() -> None:
         "## Current index.html\n\n"
         f"```html\n{current_html}\n```\n\n"
         "Compare the two. Return a JSON array where each element is:\n"
-        "{\n"
-        '  "old": "exact string to find in index.html (unique match only)",\n'
-        '  "new": "replacement string",\n'
-        '  "description": "one-line summary of the change"\n'
-        "}\n\n"
+        '{"old": "exact string in index.html", "new": "replacement", "description": "summary"}\n\n'
         "Rules:\n"
-        "- Only include changes where the LinkedIn profile explicitly states "
-        "a different value than what is currently in index.html.\n"
-        "- Do not invent or guess changes.\n"
-        "- Each 'old' value must appear exactly once in index.html.\n"
-        "- Return ONLY the JSON array, nothing else."
+        "- Only include changes where LinkedIn explicitly states a different value.\n"
+        "- Do not invent changes.\n"
+        "- Each 'old' must appear exactly once in index.html.\n"
+        "- Return ONLY the JSON array, no markdown fences, no explanation."
     )
 
-    response = model.generate_content(prompt)
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        config=types.GenerateContentConfig(
+            system_instruction=(
+                "You are a portfolio website sync assistant. "
+                "Make index.html consistent with the LinkedIn profile source-of-truth. "
+                "Return ONLY a raw JSON array of find-and-replace changes. "
+                "No markdown fences, no explanation."
+            ),
+        ),
+        contents=prompt,
+    )
+
     raw = strip_code_fences(response.text)
 
     try:
@@ -84,7 +73,7 @@ def main() -> None:
         print("Raw response:\n", raw[:800], file=sys.stderr)
         sys.exit(1)
 
-    print(f"\nGemini proposed {len(changes)} change(s). Applying…\n")
+    print(f"\nGemini proposed {len(changes)} change(s). Applying...\n")
 
     updated_html = current_html
     applied: list[str] = []
@@ -103,14 +92,14 @@ def main() -> None:
         if count == 1:
             updated_html = updated_html.replace(old, new, 1)
             applied.append(desc)
-            print(f"  ✓  {desc}")
+            print(f"  OK  {desc}")
         elif count == 0:
-            skipped.append(f"Not found: {old[:70]}…")
-            print(f"  ✗  Not found: {old[:70]}…")
+            skipped.append(f"Not found: {old[:70]}")
+            print(f"  --  Not found: {old[:70]}")
         else:
             updated_html = updated_html.replace(old, new, 1)
-            applied.append(f"{desc}  *(first of {count} occurrences)*")
-            print(f"  ⚠  Ambiguous ({count} matches), applied first: {desc}")
+            applied.append(f"{desc} (first of {count})")
+            print(f"  !!  Ambiguous ({count} matches), applied first: {desc}")
 
     with open("index.html", "w", encoding="utf-8") as f:
         f.write(updated_html)
@@ -119,19 +108,15 @@ def main() -> None:
     skipped_section = ""
     if skipped:
         skipped_md = "\n".join(f"- {s}" for s in skipped)
-        skipped_section = (
-            f"\n### ⚠️ Skipped ({len(skipped)})\n{skipped_md}\n"
-        )
+        skipped_section = f"\n### Skipped ({len(skipped)})\n{skipped_md}\n"
 
     pr_body = (
-        "## 🔄 LinkedIn → Portfolio Sync\n\n"
-        "Gemini compared `linkedin-profile.md` against `index.html` "
-        "and proposed the following changes:\n\n"
-        f"### ✅ Applied ({len(applied)})\n{applied_md}\n"
+        "## LinkedIn Portfolio Sync\n\n"
+        "Gemini compared `linkedin-profile.md` against `index.html`:\n\n"
+        f"### Applied ({len(applied)})\n{applied_md}\n"
         f"{skipped_section}"
         "\n---\n"
-        "**Review the diff in the Files Changed tab.**\n"
-        "Merge to publish · Close to reject — nothing goes live until you merge.\n"
+        "Review the diff in Files Changed. Merge to publish, close to reject.\n"
     )
 
     with open("/tmp/pr_description.md", "w", encoding="utf-8") as f:
