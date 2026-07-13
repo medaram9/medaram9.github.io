@@ -1,23 +1,27 @@
 name: Sync LinkedIn to Portfolio
 
 # ─── Triggers ──────────────────────────────────────────────────────────────
-# A) workflow_dispatch  — you run this manually from GitHub Actions UI
-#    and paste what changed on LinkedIn into the input box.
-# B) repository_dispatch — Make.com fires this automatically when it detects
-#    a LinkedIn profile-update email in your Gmail. Creates a reminder issue
-#    so you know to run Path A with the actual content.
+# A) repository_dispatch (type: linkedin-profile-updated)
+#    Fired by Make.com when it detects a LinkedIn profile change.
+#    client_payload contains the updated LinkedIn fields directly.
+#    Claude runs immediately and opens a PR — no manual step needed.
+#
+# B) workflow_dispatch
+#    Manual fallback. Run from the GitHub Actions UI and paste
+#    what changed on LinkedIn. Useful if Make.com misses something.
+
 on:
+  repository_dispatch:
+    types: [linkedin-profile-updated]
+
   workflow_dispatch:
     inputs:
       linkedin_changes:
         description: >
-          Paste what changed on LinkedIn — headline, about, new numbers,
-          new certifications, new projects, etc. Be as detailed as possible.
+          Paste what changed on LinkedIn — headline, about, certifications,
+          new numbers, new projects, etc. Be as detailed as possible.
         required: true
         type: string
-
-  repository_dispatch:
-    types: [linkedin-profile-updated]
 
 permissions:
   contents: write
@@ -32,89 +36,56 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── PATH A: Make.com auto-trigger (no LinkedIn content available) ──────
-      # Creates a GitHub Issue reminding you to run the workflow with content.
-      - name: Create reminder issue (Make.com trigger)
-        if: github.event_name == 'repository_dispatch'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { data: issue } = await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: '🔔 LinkedIn Profile Updated — Portfolio Sync Needed',
-              body: [
-                '## LinkedIn Profile Update Detected',
-                '',
-                'Make.com detected a LinkedIn profile-update email in your Gmail.',
-                '',
-                '### To sync your portfolio:',
-                '',
-                '1. Go to **[Actions → Sync LinkedIn to Portfolio](https://github.com/' +
-                  context.repo.owner + '/' + context.repo.repo +
-                  '/actions/workflows/sync-linkedin.yml)**',
-                '2. Click **"Run workflow"** (top-right of the workflow list)',
-                '3. Paste your updated LinkedIn content in the text box',
-                '   *(headline, about section, new numbers, certifications, etc.)*',
-                '4. Click **Run**',
-                '',
-                'Claude will generate a PR with the proposed site changes.',
-                'You review the diff and merge when satisfied.',
-                '',
-                '> **No changes go live until you merge the PR.**',
-              ].join('\n'),
-              labels: ['sync-needed'],
-            });
-            console.log('✅ Reminder issue created:', issue.html_url);
-
-      # ── PATH B: workflow_dispatch (you provided LinkedIn content) ──────────
-
       - name: Set up Python 3.11
-        if: github.event_name == 'workflow_dispatch'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install Anthropic SDK
-        if: github.event_name == 'workflow_dispatch'
         run: pip install anthropic --quiet
 
-      - name: Copy sync script into workspace
+      # Build LINKEDIN_CHANGES from whichever trigger fired
+      - name: Prepare LinkedIn changes (Make.com payload)
+        if: github.event_name == 'repository_dispatch'
+        run: |
+          cat <<'PAYLOAD' > /tmp/linkedin_changes.txt
+          ${{ toJSON(github.event.client_payload) }}
+          PAYLOAD
+          echo "SOURCE=make.com" >> "$GITHUB_ENV"
+
+      - name: Prepare LinkedIn changes (manual input)
         if: github.event_name == 'workflow_dispatch'
         run: |
-          mkdir -p scripts
-          cp scripts/sync_linkedin.py /tmp/runner_sync.py 2>/dev/null || true
+          cat <<'INPUT' > /tmp/linkedin_changes.txt
+          ${{ github.event.inputs.linkedin_changes }}
+          INPUT
+          echo "SOURCE=manual" >> "$GITHUB_ENV"
 
       - name: Generate portfolio changes via Claude
-        if: github.event_name == 'workflow_dispatch'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          LINKEDIN_CHANGES: ${{ github.event.inputs.linkedin_changes }}
+          LINKEDIN_CHANGES_FILE: /tmp/linkedin_changes.txt
         run: python scripts/sync_linkedin.py
 
       - name: Check if index.html was modified
-        if: github.event_name == 'workflow_dispatch'
         id: changes
         run: |
           if git diff --quiet index.html; then
             echo "detected=false" >> "$GITHUB_OUTPUT"
-            echo "ℹ️  No changes to index.html — portfolio already reflects the provided LinkedIn updates."
+            echo "ℹ️  No changes detected — portfolio already matches."
           else
             echo "detected=true" >> "$GITHUB_OUTPUT"
-            echo "✅ Changes detected in index.html."
             git diff --stat index.html
           fi
 
       - name: Create branch and open PR
-        if: >
-          github.event_name == 'workflow_dispatch' &&
-          steps.changes.outputs.detected == 'true'
+        if: steps.changes.outputs.detected == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           DATE=$(date +'%Y%m%d-%H%M%S')
+          HUMAN_DATE=$(date +'%B %d, %Y at %H:%M UTC')
           BRANCH="linkedin-sync-${DATE}"
-          HUMAN_DATE=$(date +'%B %d, %Y')
 
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -129,12 +100,8 @@ jobs:
             --base main \
             --head "$BRANCH"
 
-          echo ""
-          echo "✅ PR created. Review the diff and merge when you're happy with the changes."
+          echo "✅ PR created — review the diff and merge when ready."
 
-      - name: No changes needed
-        if: >
-          github.event_name == 'workflow_dispatch' &&
-          steps.changes.outputs.detected == 'false'
-        run: |
-          echo "Portfolio is already in sync. No PR created."
+      - name: Already in sync
+        if: steps.changes.outputs.detected == 'false'
+        run: echo "✅ Portfolio already reflects these LinkedIn updates. No PR created."
