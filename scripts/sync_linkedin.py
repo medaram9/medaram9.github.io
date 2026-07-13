@@ -2,38 +2,14 @@
 """
 LinkedIn → Portfolio sync script.
 
-Reads LinkedIn changes from LINKEDIN_CHANGES_FILE (written by the GH Action),
-calls Claude API to generate a targeted list of HTML edits, applies them to
-index.html, and writes a PR description to /tmp/pr_description.md.
-
-Handles two payload shapes:
-  - Make.com JSON payload  (repository_dispatch)
-  - Plain text             (workflow_dispatch manual input)
+Reads linkedin-profile.md (source of truth) and index.html,
+asks Claude to produce a JSON diff, applies it, and writes
+a PR description to /tmp/pr_description.md.
 """
 import os
 import json
 import sys
 import anthropic
-
-
-def load_linkedin_changes(path: str) -> str:
-    with open(path, "r", encoding="utf-8") as f:
-        raw = f.read().strip()
-
-    # Make.com sends a JSON payload — pretty-print it into readable text
-    # so Claude can parse the field names and values easily.
-    try:
-        data = json.loads(raw)
-        if isinstance(data, dict):
-            lines = ["LinkedIn profile fields updated via Make.com:\n"]
-            for key, value in data.items():
-                if value and key not in ("triggered_by",):
-                    lines.append(f"{key}: {value}")
-            return "\n".join(lines)
-    except (json.JSONDecodeError, ValueError):
-        pass  # Not JSON — treat as plain text (manual input)
-
-    return raw
 
 
 def strip_code_fences(text: str) -> str:
@@ -49,58 +25,55 @@ def strip_code_fences(text: str) -> str:
 
 def main() -> None:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
-    changes_file = os.environ.get("LINKEDIN_CHANGES_FILE", "/tmp/linkedin_changes.txt")
-
     if not api_key:
         print("ERROR: ANTHROPIC_API_KEY secret is not set.", file=sys.stderr)
         sys.exit(1)
 
-    if not os.path.exists(changes_file):
-        print(f"ERROR: Changes file not found: {changes_file}", file=sys.stderr)
+    if not os.path.exists("linkedin-profile.md"):
+        print("ERROR: linkedin-profile.md not found in repo root.", file=sys.stderr)
         sys.exit(1)
 
-    linkedin_changes = load_linkedin_changes(changes_file)
-
-    if not linkedin_changes.strip():
-        print("ERROR: LinkedIn changes are empty.", file=sys.stderr)
-        sys.exit(1)
-
-    print("LinkedIn changes received:")
-    print(linkedin_changes[:500])
-    print("---")
+    with open("linkedin-profile.md", "r", encoding="utf-8") as f:
+        linkedin_content = f.read()
 
     with open("index.html", "r", encoding="utf-8") as f:
         current_html = f.read()
 
+    print("linkedin-profile.md loaded.")
+    print("index.html loaded.")
+    print("\nCalling Claude API…")
+
     client = anthropic.Anthropic(api_key=api_key)
 
-    print("\nCalling Claude API…")
     response = client.messages.create(
         model="claude-opus-4-8",
         max_tokens=4096,
         system=(
             "You are a portfolio website sync assistant. "
-            "Given the current index.html and LinkedIn profile updates, "
-            "return ONLY a JSON array of surgical find-and-replace changes. "
-            "No markdown fences, no preamble — just the raw JSON array."
+            "Your job is to make index.html consistent with the LinkedIn profile "
+            "source-of-truth document. Return ONLY a JSON array of surgical "
+            "find-and-replace changes. No markdown fences, no explanation."
         ),
         messages=[
             {
                 "role": "user",
                 "content": (
-                    f"Current index.html:\n```html\n{current_html}\n```\n\n"
-                    f"LinkedIn profile updates to sync:\n{linkedin_changes}\n\n"
-                    "Return a JSON array where each element is:\n"
-                    '{\n'
-                    '  "old": "exact string to find (must appear exactly once in the HTML)",\n'
+                    "## LinkedIn profile (source of truth)\n\n"
+                    f"{linkedin_content}\n\n"
+                    "## Current index.html\n\n"
+                    f"```html\n{current_html}\n```\n\n"
+                    "Compare the two. Return a JSON array where each element is:\n"
+                    "{\n"
+                    '  "old": "exact string to find in index.html (unique match only)",\n'
                     '  "new": "replacement string",\n'
-                    '  "description": "one-line summary"\n'
-                    '}\n\n'
+                    '  "description": "one-line summary of the change"\n'
+                    "}\n\n"
                     "Rules:\n"
-                    "- Only include changes directly supported by the LinkedIn updates above.\n"
+                    "- Only include changes where the LinkedIn profile explicitly states "
+                    "a different value than what is currently in index.html.\n"
                     "- Do not invent or guess changes.\n"
-                    "- Each 'old' string must be unique in the HTML file.\n"
-                    "- Return ONLY the JSON array, nothing else."
+                    "- Each 'old' value must appear exactly once in index.html.\n"
+                    "- Return ONLY the JSON array."
                 ),
             }
         ],
@@ -127,7 +100,7 @@ def main() -> None:
         desc = change.get("description", "")
 
         if not old:
-            skipped.append(f"Empty 'old' field — {desc}")
+            skipped.append(f"Empty 'old' — {desc}")
             continue
 
         count = updated_html.count(old)
@@ -147,23 +120,22 @@ def main() -> None:
         f.write(updated_html)
 
     # PR description
-    applied_md  = "\n".join(f"- {d}" for d in applied) or "_None_"
+    applied_md = "\n".join(f"- {d}" for d in applied) or "_None_"
     skipped_section = ""
     if skipped:
         skipped_md = "\n".join(f"- {s}" for s in skipped)
         skipped_section = f"\n### ⚠️ Skipped ({len(skipped)})\n{skipped_md}\n"
 
-    pr_body = f"""## 🔄 LinkedIn → Portfolio Sync
-
-Claude analysed the LinkedIn updates and proposed the following changes to `index.html`:
-
-### ✅ Applied ({len(applied)})
-{applied_md}
-{skipped_section}
----
-**Review the diff in the Files Changed tab.**
-Merge to publish · Close to reject — nothing goes live until you merge.
-"""
+    pr_body = (
+        "## 🔄 LinkedIn → Portfolio Sync\n\n"
+        "Claude compared `linkedin-profile.md` against `index.html` "
+        "and proposed the following changes:\n\n"
+        f"### ✅ Applied ({len(applied)})\n{applied_md}\n"
+        f"{skipped_section}"
+        "\n---\n"
+        "**Review the diff in the Files Changed tab.**\n"
+        "Merge to publish · Close to reject — nothing goes live until you merge.\n"
+    )
 
     with open("/tmp/pr_description.md", "w", encoding="utf-8") as f:
         f.write(pr_body)
