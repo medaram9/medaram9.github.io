@@ -162,6 +162,14 @@ def main() -> None:
         desc = change.get("description", "")
 
         # ADD CERT special case: old is empty, new is "cert name|Group Label"
+        # Strip snapshot label prefixes the model sometimes includes
+        for prefix in ("CERT: ", "CHIP: ", "HEADLINE: ", "PROJECT_TITLE: ",
+                       "METRIC: ", "FOOTER: ", "ABOUT_P1: ", "ABOUT_P2: ",
+                       "ABOUT_P3: ", "EXP_BULLET: "):
+            if old.startswith(prefix):
+                old = old[len(prefix):]
+                break
+
         if not old and "|" in new:
             cert_name, group_label = [x.strip() for x in new.split("|", 1)]
             pattern = (
