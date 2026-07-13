@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-LinkedIn → Portfolio sync script.
+LinkedIn → Portfolio sync script (powered by Google Gemini — free tier).
 
 Reads linkedin-profile.md (source of truth) and index.html,
-asks Claude to produce a JSON diff, applies it, and writes
+asks Gemini to produce a JSON diff, applies it, and writes
 a PR description to /tmp/pr_description.md.
 """
 import os
 import json
 import sys
-import anthropic
+import google.generativeai as genai
 
 
 def strip_code_fences(text: str) -> str:
@@ -24,9 +24,9 @@ def strip_code_fences(text: str) -> str:
 
 
 def main() -> None:
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        print("ERROR: ANTHROPIC_API_KEY secret is not set.", file=sys.stderr)
+        print("ERROR: GEMINI_API_KEY secret is not set.", file=sys.stderr)
         sys.exit(1)
 
     if not os.path.exists("linkedin-profile.md"):
@@ -41,54 +41,50 @@ def main() -> None:
 
     print("linkedin-profile.md loaded.")
     print("index.html loaded.")
-    print("\nCalling Claude API…")
+    print("\nCalling Gemini API…")
 
-    client = anthropic.Anthropic(api_key=api_key)
-
-    response = client.messages.create(
-        model="claude-opus-4-8",
-        max_tokens=4096,
-        system=(
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(
+        model_name="gemini-1.5-flash",
+        system_instruction=(
             "You are a portfolio website sync assistant. "
             "Your job is to make index.html consistent with the LinkedIn profile "
             "source-of-truth document. Return ONLY a JSON array of surgical "
-            "find-and-replace changes. No markdown fences, no explanation."
+            "find-and-replace changes. No markdown fences, no explanation — "
+            "just the raw JSON array."
         ),
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    "## LinkedIn profile (source of truth)\n\n"
-                    f"{linkedin_content}\n\n"
-                    "## Current index.html\n\n"
-                    f"```html\n{current_html}\n```\n\n"
-                    "Compare the two. Return a JSON array where each element is:\n"
-                    "{\n"
-                    '  "old": "exact string to find in index.html (unique match only)",\n'
-                    '  "new": "replacement string",\n'
-                    '  "description": "one-line summary of the change"\n'
-                    "}\n\n"
-                    "Rules:\n"
-                    "- Only include changes where the LinkedIn profile explicitly states "
-                    "a different value than what is currently in index.html.\n"
-                    "- Do not invent or guess changes.\n"
-                    "- Each 'old' value must appear exactly once in index.html.\n"
-                    "- Return ONLY the JSON array."
-                ),
-            }
-        ],
     )
 
-    raw = strip_code_fences(response.content[0].text)
+    prompt = (
+        "## LinkedIn profile (source of truth)\n\n"
+        f"{linkedin_content}\n\n"
+        "## Current index.html\n\n"
+        f"```html\n{current_html}\n```\n\n"
+        "Compare the two. Return a JSON array where each element is:\n"
+        "{\n"
+        '  "old": "exact string to find in index.html (unique match only)",\n'
+        '  "new": "replacement string",\n'
+        '  "description": "one-line summary of the change"\n'
+        "}\n\n"
+        "Rules:\n"
+        "- Only include changes where the LinkedIn profile explicitly states "
+        "a different value than what is currently in index.html.\n"
+        "- Do not invent or guess changes.\n"
+        "- Each 'old' value must appear exactly once in index.html.\n"
+        "- Return ONLY the JSON array, nothing else."
+    )
+
+    response = model.generate_content(prompt)
+    raw = strip_code_fences(response.text)
 
     try:
         changes = json.loads(raw)
     except json.JSONDecodeError as exc:
-        print(f"ERROR: Claude returned invalid JSON — {exc}", file=sys.stderr)
+        print(f"ERROR: Gemini returned invalid JSON — {exc}", file=sys.stderr)
         print("Raw response:\n", raw[:800], file=sys.stderr)
         sys.exit(1)
 
-    print(f"\nClaude proposed {len(changes)} change(s). Applying…\n")
+    print(f"\nGemini proposed {len(changes)} change(s). Applying…\n")
 
     updated_html = current_html
     applied: list[str] = []
@@ -119,16 +115,17 @@ def main() -> None:
     with open("index.html", "w", encoding="utf-8") as f:
         f.write(updated_html)
 
-    # PR description
     applied_md = "\n".join(f"- {d}" for d in applied) or "_None_"
     skipped_section = ""
     if skipped:
         skipped_md = "\n".join(f"- {s}" for s in skipped)
-        skipped_section = f"\n### ⚠️ Skipped ({len(skipped)})\n{skipped_md}\n"
+        skipped_section = (
+            f"\n### ⚠️ Skipped ({len(skipped)})\n{skipped_md}\n"
+        )
 
     pr_body = (
         "## 🔄 LinkedIn → Portfolio Sync\n\n"
-        "Claude compared `linkedin-profile.md` against `index.html` "
+        "Gemini compared `linkedin-profile.md` against `index.html` "
         "and proposed the following changes:\n\n"
         f"### ✅ Applied ({len(applied)})\n{applied_md}\n"
         f"{skipped_section}"
