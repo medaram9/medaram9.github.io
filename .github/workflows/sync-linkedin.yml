@@ -12,6 +12,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  models: read
 
 jobs:
   sync:
@@ -26,12 +27,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Google Generative AI SDK
-        run: pip install google-genai --quiet
+      - name: Install OpenAI SDK
+        run: pip install openai --quiet
 
-      - name: Generate portfolio changes via Gemini
+      - name: Generate portfolio changes via GitHub Models
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/sync_linkedin.py
 
       - name: Check if index.html was modified
@@ -39,7 +40,7 @@ jobs:
         run: |
           if git diff --quiet index.html; then
             echo "detected=false" >> "$GITHUB_OUTPUT"
-            echo "ℹ️  No changes — portfolio already matches linkedin-profile.md"
+            echo "No changes — portfolio already matches linkedin-profile.md"
           else
             echo "detected=true" >> "$GITHUB_OUTPUT"
             git diff --stat index.html
@@ -61,13 +62,13 @@ jobs:
           git push origin "$BRANCH"
 
           gh pr create \
-            --title "🔄 LinkedIn Sync — $(date +'%B %d, %Y')" \
+            --title "LinkedIn Sync — $(date +'%B %d, %Y')" \
             --body "$(cat /tmp/pr_description.md)" \
             --base main \
             --head "$BRANCH"
 
-          echo "✅ PR created. Review the diff and merge when ready."
+          echo "PR created. Review the diff and merge when ready."
 
       - name: Already in sync
         if: steps.changes.outputs.detected == 'false'
-        run: echo "✅ Portfolio already reflects linkedin-profile.md. No PR created."
+        run: echo "Portfolio already reflects linkedin-profile.md. No PR created."
