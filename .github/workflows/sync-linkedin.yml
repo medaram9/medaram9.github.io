@@ -1,15 +1,5 @@
 name: Sync LinkedIn to Portfolio
 
-# ─── How this works ────────────────────────────────────────────────────────
-# 1. You update your LinkedIn profile.
-# 2. Edit linkedin-profile.md in this repo to match (GitHub web UI is fine).
-# 3. Commit directly to main — this Action fires automatically.
-# 4. Claude reads linkedin-profile.md + index.html and opens a PR with
-#    the proposed site changes.
-# 5. You review the diff → merge to publish. Nothing goes live until you merge.
-#
-# Manual fallback: Actions → "Sync LinkedIn to Portfolio" → Run workflow
-
 on:
   push:
     paths:
@@ -36,12 +26,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Anthropic SDK
-        run: pip install anthropic --quiet
+      - name: Install Google Generative AI SDK
+        run: pip install google-generativeai --quiet
 
-      - name: Generate portfolio changes via Claude
+      - name: Generate portfolio changes via Gemini
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python scripts/sync_linkedin.py
 
       - name: Check if index.html was modified
