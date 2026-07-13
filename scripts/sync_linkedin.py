@@ -16,13 +16,23 @@ def strip_code_fences(text: str) -> str:
     return text
 
 
-def slim_html(html: str) -> str:
-    """Remove style/script blocks to reduce token count. Keep all visible text."""
-    html = re.sub(r"<style[^>]*>.*?</style>", "<style>/* stripped */</style>", html, flags=re.DOTALL)
-    html = re.sub(r"<script[^>]*>.*?</script>", "<script>/* stripped */</script>", html, flags=re.DOTALL)
-    # Collapse runs of blank lines
-    html = re.sub(r"\n{3,}", "\n\n", html)
-    return html
+def extract_text(html: str) -> str:
+    """Pull visible text out of HTML to stay within token limits."""
+    text = re.sub(r"<(script|style)[^>]*>.*?</\1>", "", html, flags=re.DOTALL)
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"&amp;", "&", text)
+    text = re.sub(r"&lt;", "<", text)
+    text = re.sub(r"&gt;", ">", text)
+    text = re.sub(r"&[a-zA-Z]+;|&#\d+;", " ", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    lines = [l.strip() for l in text.splitlines() if len(l.strip()) > 3]
+    # deduplicate consecutive identical lines
+    deduped = []
+    for line in lines:
+        if not deduped or line != deduped[-1]:
+            deduped.append(line)
+    return "\n".join(deduped)
 
 
 def main() -> None:
@@ -40,10 +50,10 @@ def main() -> None:
     with open("index.html", "r", encoding="utf-8") as f:
         current_html = f.read()
 
-    slimmed = slim_html(current_html)
+    visible_text = extract_text(current_html)
     print(f"linkedin-profile.md loaded.")
-    print(f"index.html loaded ({len(current_html)} chars → {len(slimmed)} chars after stripping style/script).")
-    print("\nCalling GitHub Models (gpt-4o)...")
+    print(f"index.html: {len(current_html)} chars → {len(visible_text)} chars visible text.")
+    print("\nCalling GitHub Models (gpt-4o-mini)...")
 
     client = OpenAI(
         base_url="https://models.inference.ai.azure.com",
@@ -51,15 +61,15 @@ def main() -> None:
     )
 
     response = client.chat.completions.create(
-        model="gpt-4o",
-        max_tokens=4096,
+        model="gpt-4o-mini",
+        max_tokens=2048,
         messages=[
             {
                 "role": "system",
                 "content": (
                     "You are a portfolio website sync assistant. "
-                    "Make index.html consistent with the LinkedIn profile source-of-truth. "
-                    "Return ONLY a raw JSON array of find-and-replace changes. "
+                    "Compare the LinkedIn profile (source of truth) against the current site text. "
+                    "Return ONLY a raw JSON array of text find-and-replace changes needed. "
                     "No markdown fences, no explanation."
                 ),
             },
@@ -68,15 +78,15 @@ def main() -> None:
                 "content": (
                     "## LinkedIn profile (source of truth)\n\n"
                     f"{linkedin_content}\n\n"
-                    "## Current index.html (style/script blocks stripped to save tokens — "
-                    "your 'old' strings must still be exact matches from the FULL file)\n\n"
-                    f"```html\n{slimmed}\n```\n\n"
-                    'Return a JSON array: [{"old": "exact string in full html", "new": "replacement", "description": "summary"}]\n\n'
+                    "## Current site visible text (stripped from index.html)\n\n"
+                    f"{visible_text}\n\n"
+                    "Identify text in the site that differs from LinkedIn. "
+                    'Return a JSON array: [{"old": "exact phrase currently in site", "new": "correct phrase from LinkedIn", "description": "what changed"}]\n\n'
                     "Rules:\n"
-                    "- Only include changes where LinkedIn explicitly states a different value.\n"
+                    "- 'old' must be a short, unique phrase (5-15 words) that appears verbatim in the site text above.\n"
+                    "- Only include changes explicitly supported by the LinkedIn data.\n"
                     "- Do not invent changes.\n"
-                    "- Each 'old' must appear exactly once in the full index.html.\n"
-                    "- Return ONLY the JSON array."
+                    "- Return ONLY the JSON array, nothing else."
                 ),
             },
         ],
@@ -89,6 +99,10 @@ def main() -> None:
     except json.JSONDecodeError as exc:
         print(f"ERROR: Model returned invalid JSON — {exc}", file=sys.stderr)
         print("Raw response:\n", raw[:800], file=sys.stderr)
+        sys.exit(1)
+
+    if not isinstance(changes, list):
+        print("ERROR: Expected a JSON array.", file=sys.stderr)
         sys.exit(1)
 
     print(f"\nModel proposed {len(changes)} change(s). Applying...\n")
