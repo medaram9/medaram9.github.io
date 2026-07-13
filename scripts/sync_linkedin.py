@@ -2,8 +2,7 @@
 import os
 import json
 import sys
-from google import genai
-from google.genai import types
+from openai import OpenAI
 
 
 def strip_code_fences(text: str) -> str:
@@ -17,13 +16,13 @@ def strip_code_fences(text: str) -> str:
 
 
 def main() -> None:
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        print("ERROR: GEMINI_API_KEY secret is not set.", file=sys.stderr)
+    token = os.environ.get("GITHUB_TOKEN")
+    if not token:
+        print("ERROR: GITHUB_TOKEN is not set.", file=sys.stderr)
         sys.exit(1)
 
     if not os.path.exists("linkedin-profile.md"):
-        print("ERROR: linkedin-profile.md not found in repo root.", file=sys.stderr)
+        print("ERROR: linkedin-profile.md not found.", file=sys.stderr)
         sys.exit(1)
 
     with open("linkedin-profile.md", "r", encoding="utf-8") as f:
@@ -33,47 +32,54 @@ def main() -> None:
 
     print("linkedin-profile.md loaded.")
     print("index.html loaded.")
-    print("\nCalling Gemini API...")
+    print("\nCalling GitHub Models (gpt-4o-mini)...")
 
-    client = genai.Client(api_key=api_key)
-
-    prompt = (
-        "## LinkedIn profile (source of truth)\n\n"
-        f"{linkedin_content}\n\n"
-        "## Current index.html\n\n"
-        f"```html\n{current_html}\n```\n\n"
-        "Compare the two. Return a JSON array where each element is:\n"
-        '{"old": "exact string in index.html", "new": "replacement", "description": "summary"}\n\n'
-        "Rules:\n"
-        "- Only include changes where LinkedIn explicitly states a different value.\n"
-        "- Do not invent changes.\n"
-        "- Each 'old' must appear exactly once in index.html.\n"
-        "- Return ONLY the JSON array, no markdown fences, no explanation."
+    client = OpenAI(
+        base_url="https://models.inference.ai.azure.com",
+        api_key=token,
     )
 
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
-        config=types.GenerateContentConfig(
-            system_instruction=(
-                "You are a portfolio website sync assistant. "
-                "Make index.html consistent with the LinkedIn profile source-of-truth. "
-                "Return ONLY a raw JSON array of find-and-replace changes. "
-                "No markdown fences, no explanation."
-            ),
-        ),
-        contents=prompt,
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        max_tokens=4096,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a portfolio website sync assistant. "
+                    "Make index.html consistent with the LinkedIn profile source-of-truth. "
+                    "Return ONLY a raw JSON array of find-and-replace changes. "
+                    "No markdown fences, no explanation."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    "## LinkedIn profile (source of truth)\n\n"
+                    f"{linkedin_content}\n\n"
+                    "## Current index.html\n\n"
+                    f"```html\n{current_html}\n```\n\n"
+                    'Return a JSON array: [{"old": "exact string in html", "new": "replacement", "description": "summary"}]\n\n'
+                    "Rules:\n"
+                    "- Only include changes where LinkedIn explicitly states a different value.\n"
+                    "- Do not invent changes.\n"
+                    "- Each 'old' must appear exactly once in index.html.\n"
+                    "- Return ONLY the JSON array."
+                ),
+            },
+        ],
     )
 
-    raw = strip_code_fences(response.text)
+    raw = strip_code_fences(response.choices[0].message.content)
 
     try:
         changes = json.loads(raw)
     except json.JSONDecodeError as exc:
-        print(f"ERROR: Gemini returned invalid JSON — {exc}", file=sys.stderr)
+        print(f"ERROR: Model returned invalid JSON — {exc}", file=sys.stderr)
         print("Raw response:\n", raw[:800], file=sys.stderr)
         sys.exit(1)
 
-    print(f"\nGemini proposed {len(changes)} change(s). Applying...\n")
+    print(f"\nModel proposed {len(changes)} change(s). Applying...\n")
 
     updated_html = current_html
     applied: list[str] = []
@@ -112,7 +118,7 @@ def main() -> None:
 
     pr_body = (
         "## LinkedIn Portfolio Sync\n\n"
-        "Gemini compared `linkedin-profile.md` against `index.html`:\n\n"
+        "AI compared `linkedin-profile.md` against `index.html`:\n\n"
         f"### Applied ({len(applied)})\n{applied_md}\n"
         f"{skipped_section}"
         "\n---\n"
