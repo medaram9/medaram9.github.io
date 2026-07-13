@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import re
 import json
 import sys
 from openai import OpenAI
@@ -13,6 +14,15 @@ def strip_code_fences(text: str) -> str:
             lines = lines[:-1]
         return "\n".join(lines).strip()
     return text
+
+
+def slim_html(html: str) -> str:
+    """Remove style/script blocks to reduce token count. Keep all visible text."""
+    html = re.sub(r"<style[^>]*>.*?</style>", "<style>/* stripped */</style>", html, flags=re.DOTALL)
+    html = re.sub(r"<script[^>]*>.*?</script>", "<script>/* stripped */</script>", html, flags=re.DOTALL)
+    # Collapse runs of blank lines
+    html = re.sub(r"\n{3,}", "\n\n", html)
+    return html
 
 
 def main() -> None:
@@ -30,9 +40,10 @@ def main() -> None:
     with open("index.html", "r", encoding="utf-8") as f:
         current_html = f.read()
 
-    print("linkedin-profile.md loaded.")
-    print("index.html loaded.")
-    print("\nCalling GitHub Models (gpt-4o-mini)...")
+    slimmed = slim_html(current_html)
+    print(f"linkedin-profile.md loaded.")
+    print(f"index.html loaded ({len(current_html)} chars → {len(slimmed)} chars after stripping style/script).")
+    print("\nCalling GitHub Models (gpt-4o)...")
 
     client = OpenAI(
         base_url="https://models.inference.ai.azure.com",
@@ -40,7 +51,7 @@ def main() -> None:
     )
 
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model="gpt-4o",
         max_tokens=4096,
         messages=[
             {
@@ -57,13 +68,14 @@ def main() -> None:
                 "content": (
                     "## LinkedIn profile (source of truth)\n\n"
                     f"{linkedin_content}\n\n"
-                    "## Current index.html\n\n"
-                    f"```html\n{current_html}\n```\n\n"
-                    'Return a JSON array: [{"old": "exact string in html", "new": "replacement", "description": "summary"}]\n\n'
+                    "## Current index.html (style/script blocks stripped to save tokens — "
+                    "your 'old' strings must still be exact matches from the FULL file)\n\n"
+                    f"```html\n{slimmed}\n```\n\n"
+                    'Return a JSON array: [{"old": "exact string in full html", "new": "replacement", "description": "summary"}]\n\n'
                     "Rules:\n"
                     "- Only include changes where LinkedIn explicitly states a different value.\n"
                     "- Do not invent changes.\n"
-                    "- Each 'old' must appear exactly once in index.html.\n"
+                    "- Each 'old' must appear exactly once in the full index.html.\n"
                     "- Return ONLY the JSON array."
                 ),
             },
