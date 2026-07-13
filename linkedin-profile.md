@@ -15,8 +15,25 @@ Staff Cloud Network & AI Infrastructure Architect | GCP, AWS, Python, Terraform,
 
 ## Current Role
 
-**Cloud Lead Network & DevOps Engineer — AI Infrastructure Specialist**
-Ultimate Kronos Group (UKG) · May 2017 – Present
+**Staff Cloud Engineer
+
+Jan 2026 - Present · 7 mos
+
+Sunrise, Florida, United States
+
+Leading AI infrastructure adoption and cloud network architecture for a multi-region GCP environment, with a focus on automation, zero-trust security, and intelligent incident response.
+
+• Built a Network MCP (Model Context Protocol) Server — 13 AI tools, <100ms response, natively integrated with Claude Code; consolidated 68 firewall rule patterns into 1
+• Architected PRISM, an AI-powered incident response platform (18 microservices, 3-phase diagnostics using TF-IDF/cosine similarity + Event-Driven Ansible) — reduced MTTR by 97% (2 hrs → 72 sec), 22:1 ROI, 70% auto-resolution
+• Deployed a RAG-based Network AI Chatbot (Claude LLM) — cut documentation search time by 60% for 40+ engineers, first AI chatbot in the Cloud Infrastructure org
+• Delivered a 3-phase Claude Code automation program — 99% faster subnet provisioning (3 days → 10 min) across 320 subnets in 10 regions, zero production incidents
+• Architected GCP multi-region infrastructure (5 global regions) supporting 50+ firewalls and 100+ load balancers at 99.9% uptime; led full GCVE lifecycle (deploy → operate → decommission)
+• Led enterprise-wide zero-trust macrosegmentation (500+ rules, 4 phases, 99.99% complete) — reduced attack surface by 80%+
+• Developed 81,000+ Infrastructure-as-Code files (Terraform, Ansible, Python) over 11 years — 2,100+ hrs/year savings, 95%+ config accuracy
+• AI firewall log analysis (17,447 logs in 8 seconds, 25:1 ROI) & Built portfolio risk automation (138 emails/week, 400+ tickets monitored, zero SLA breaches)
+• Invited by Network to Code to serve as a panelist at the FLNUG AI Summit (Tampa, March 2025) on applied AI in network operations
+
+ Artificial Intelligence (AI), Network Architecture and +29 skills
 
 ---
 
